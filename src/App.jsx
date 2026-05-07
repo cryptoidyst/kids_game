@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useDragControls } from "framer-motion";
 
 // ─── Translations ────────────────────────────────────────────────────────────
@@ -253,6 +253,56 @@ function getResultMessage(score, lang) {
   return t.resultMessageHigh;
 }
 
+function useFeedbackSound() {
+  const audioContextRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioContextRef.current) {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
+    };
+  }, []);
+
+  return useCallback((kind) => {
+    if (typeof window === "undefined") return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+
+    if (!audioContextRef.current) audioContextRef.current = new AudioCtx();
+    const ctx = audioContextRef.current;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (kind === "correct") {
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(1100, now);
+      osc.frequency.exponentialRampToValueAtTime(1500, now + 0.12);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+      osc.start(now);
+      osc.stop(now + 0.16);
+      return;
+    }
+
+    osc.type = "square";
+    osc.frequency.setValueAtTime(260, now);
+    osc.frequency.exponentialRampToValueAtTime(140, now + 0.2);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.13, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+    osc.start(now);
+    osc.stop(now + 0.24);
+  }, []);
+}
+
 function createRandomStarterLetters(words) {
   const getWordCellKey = (word, index) => {
     const row = word.direction === "Across" ? word.row : word.row + index;
@@ -433,14 +483,13 @@ function DraggableWord({ word, lang, onDropTry, onSelect, disabled, isSelected }
 }
 
 // ─── Body Parts Drag & Drop Game ──────────────────────────────────────────────
-function BodyPartsGame({ lang }) {
+function BodyPartsGame({ lang, playFeedbackSound }) {
   const t = T[lang];
   const [wordPool, setWordPool]       = useState(() => shuffle(BODY_PARTS));
   const [assignments, setAssignments] = useState({});
   const [selectedWord, setSelectedWord] = useState(null);
   const [feedback, setFeedback]       = useState(t.fb_initial);
   const [gameRound, setGameRound]     = useState(0);
-  const audioContextRef = useRef(null);
   const zoneRefs        = useRef({});
 
   useEffect(() => { setFeedback(T[lang].fb_initial); }, [lang]);
@@ -457,35 +506,6 @@ function BodyPartsGame({ lang }) {
   const resultLevel = getResultLevel(score, lang);
   const resultMessage = getResultMessage(score, lang);
 
-  const playTone = (kind) => {
-    if (typeof window === "undefined") return;
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-    if (!audioContextRef.current) audioContextRef.current = new AudioCtx();
-    const ctx = audioContextRef.current;
-    if (ctx.state === "suspended") ctx.resume();
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain); gain.connect(ctx.destination);
-    if (kind === "correct") {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(1100, now);
-      osc.frequency.exponentialRampToValueAtTime(1500, now + 0.12);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-      osc.start(now); osc.stop(now + 0.16);
-    } else {
-      osc.type = "square";
-      osc.frequency.setValueAtTime(240, now);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
-      osc.start(now); osc.stop(now + 0.12);
-    }
-  };
-
   const resetGame = () => {
     setWordPool(shuffle(BODY_PARTS));
     setAssignments({});
@@ -497,11 +517,11 @@ function BodyPartsGame({ lang }) {
   const assignWordToPart = (word, partId) => {
     const taken = Object.values(assignments);
     const label = word[lang];
-    if (taken.includes(word.id)) { setFeedback(T[lang].fb_locked(label)); playTone("wrong"); return; }
-    if (assignments[partId])      { setFeedback(T[lang].fb_taken);         playTone("wrong"); return; }
+    if (taken.includes(word.id)) { setFeedback(T[lang].fb_locked(label)); playFeedbackSound("wrong"); return; }
+    if (assignments[partId])      { setFeedback(T[lang].fb_taken);         playFeedbackSound("wrong"); return; }
     setAssignments((prev) => ({ ...prev, [partId]: word.id }));
-    if (word.id === partId) { setSelectedWord(null); setFeedback(T[lang].fb_correct(label)); playTone("correct"); }
-    else                    { setSelectedWord(null); setFeedback(T[lang].fb_wrong(label));   playTone("wrong");   }
+    if (word.id === partId) { setSelectedWord(null); setFeedback(T[lang].fb_correct(label)); playFeedbackSound("correct"); }
+    else                    { setSelectedWord(null); setFeedback(T[lang].fb_wrong(label));   playFeedbackSound("wrong");   }
   };
 
   const handleWordSelect = (word) => {
@@ -526,7 +546,7 @@ function BodyPartsGame({ lang }) {
       return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
     });
     if (hitPart) assignWordToPart(word, hitPart.id);
-    else { setFeedback(T[lang].fb_nodrop(word[lang])); playTone("wrong"); }
+    else { setFeedback(T[lang].fb_nodrop(word[lang])); playFeedbackSound("wrong"); }
   };
 
   const handleZoneTap = (partId) => {
@@ -629,7 +649,7 @@ function BodyPartsGame({ lang }) {
 }
 
 // ─── Body Parts Crossword Game ────────────────────────────────────────────────
-function BodyPartsCrosswordGame({ lang }) {
+function BodyPartsCrosswordGame({ lang, playFeedbackSound }) {
   const t      = T[lang];
   const config = useMemo(() => buildCombinedCrosswordConfig(CROSSWORD_CONFIG[lang]), [lang]);
 
@@ -702,7 +722,9 @@ function BodyPartsCrosswordGame({ lang }) {
   const checkAnswers = () => {
     setChecked(true);
     const total = config.words.length;
-    setFeedback(solvedWords === total ? t.fb_cw_solved : t.fb_cw_partial(solvedWords, total));
+    const isSolved = solvedWords === total;
+    setFeedback(isSolved ? t.fb_cw_solved : t.fb_cw_partial(solvedWords, total));
+    playFeedbackSound(isSolved ? "correct" : "wrong");
   };
 
   const resetCrossword = () => {
@@ -888,7 +910,7 @@ function BodyPartsCrosswordGame({ lang }) {
   );
 }
 
-function BodyPartsMissingWordsGame({ lang }) {
+function BodyPartsMissingWordsGame({ lang, playFeedbackSound }) {
   const t = T[lang];
   const partMap = useMemo(
     () => BODY_PARTS.reduce((acc, part) => ({ ...acc, [part.id]: part }), {}),
@@ -935,6 +957,7 @@ function BodyPartsMissingWordsGame({ lang }) {
     if (!currentQuestion || answered) return;
     if (!typedAnswer.trim()) {
       setFeedback(t.fb_mw_type_first);
+      playFeedbackSound("wrong");
       return;
     }
     const correctLabel = partMap[currentQuestion.id][lang];
@@ -943,8 +966,10 @@ function BodyPartsMissingWordsGame({ lang }) {
     if (correct) {
       setScore((prev) => prev + 10);
       setFeedback(T[lang].fb_mw_correct(correctLabel));
+      playFeedbackSound("correct");
     } else {
       setFeedback(T[lang].fb_mw_wrong(correctLabel));
+      playFeedbackSound("wrong");
     }
   };
 
@@ -1156,15 +1181,50 @@ export default function App() {
   const [lang, setLang]               = useState("en");
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const backgroundAudioRef            = useRef(null);
+  const playFeedbackSound             = useFeedbackSound();
   const t = T[lang];
 
   useEffect(() => {
     const audio = new Audio("/audio/background-music.mpeg");
     audio.loop = true;
     audio.preload = "auto";
+    audio.autoplay = true;
     backgroundAudioRef.current = audio;
 
+    let unlockCleanup = () => {};
+
+    const tryPlay = () => {
+      if (!audio.paused) return;
+
+      const playPromise = audio.play();
+      if (playPromise) {
+        playPromise
+          .then(() => unlockCleanup())
+          .catch(() => {
+            // Browsers can block audible autoplay until the first user gesture.
+          });
+      }
+    };
+
+    const unlockAudio = () => {
+      tryPlay();
+    };
+
+    const unlockEvents = ["pointerdown", "touchstart", "keydown", "click"];
+    unlockEvents.forEach((eventName) => {
+      window.addEventListener(eventName, unlockAudio, { once: true, passive: true });
+    });
+
+    unlockCleanup = () => {
+      unlockEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, unlockAudio);
+      });
+    };
+
+    tryPlay();
+
     return () => {
+      unlockCleanup();
       audio.pause();
       audio.currentTime = 0;
       backgroundAudioRef.current = null;
@@ -1306,11 +1366,15 @@ export default function App() {
       </div>
 
       {/* ── Active Game ── */}
-      {activeGame === "match" && <BodyPartsGame key={`match-${lang}`} lang={lang} />}
-      {activeGame === "crossword" && <BodyPartsCrosswordGame key={`crossword-${lang}`} lang={lang} />}
-      {activeGame === "missingWords" && <BodyPartsMissingWordsGame key={`missing-${lang}`} lang={lang} />}
+      {activeGame === "match" && (
+        <BodyPartsGame key={`match-${lang}`} lang={lang} playFeedbackSound={playFeedbackSound} />
+      )}
+      {activeGame === "crossword" && (
+        <BodyPartsCrosswordGame key={`crossword-${lang}`} lang={lang} playFeedbackSound={playFeedbackSound} />
+      )}
+      {activeGame === "missingWords" && (
+        <BodyPartsMissingWordsGame key={`missing-${lang}`} lang={lang} playFeedbackSound={playFeedbackSound} />
+      )}
     </main>
   );
 }
-
-
