@@ -285,7 +285,7 @@ function useFeedbackSound() {
       osc.frequency.setValueAtTime(1100, now);
       osc.frequency.exponentialRampToValueAtTime(1500, now + 0.12);
       gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.42, now + 0.01);
       gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
       osc.start(now);
       osc.stop(now + 0.16);
@@ -296,7 +296,7 @@ function useFeedbackSound() {
     osc.frequency.setValueAtTime(260, now);
     osc.frequency.exponentialRampToValueAtTime(140, now + 0.2);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.13, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.36, now + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
     osc.start(now);
     osc.stop(now + 0.24);
@@ -1189,6 +1189,8 @@ export default function App() {
     audio.loop = true;
     audio.preload = "auto";
     audio.autoplay = true;
+    audio.volume = 0.1;
+    audio.playbackRate = 1;
     backgroundAudioRef.current = audio;
 
     let unlockCleanup = () => {};
