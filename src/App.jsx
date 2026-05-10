@@ -254,52 +254,41 @@ function getResultMessage(score, lang) {
 }
 
 function useFeedbackSound() {
-  const audioContextRef = useRef(null);
+  const feedbackAudioRef = useRef({});
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const sounds = {
+      correct: new Audio("/audio/correct-audio.mpeg"),
+      wrong: new Audio("/audio/wrong-audio.mpeg"),
+    };
+
+    Object.values(sounds).forEach((audio) => {
+      audio.preload = "auto";
+      audio.volume = 0.85;
+      audio.load();
+    });
+
+    feedbackAudioRef.current = sounds;
+
     return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
-        audioContextRef.current = null;
-      }
+      Object.values(feedbackAudioRef.current).forEach((audio) => {
+        audio.pause();
+        audio.currentTime = 0;
+      });
+      feedbackAudioRef.current = {};
     };
   }, []);
 
   return useCallback((kind) => {
     if (typeof window === "undefined") return;
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
+    const audio = feedbackAudioRef.current[kind];
+    if (!audio) return;
 
-    if (!audioContextRef.current) audioContextRef.current = new AudioCtx();
-    const ctx = audioContextRef.current;
-    if (ctx.state === "suspended") ctx.resume().catch(() => {});
-
-    const now = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    if (kind === "correct") {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(1100, now);
-      osc.frequency.exponentialRampToValueAtTime(1500, now + 0.12);
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(0.42, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
-      osc.start(now);
-      osc.stop(now + 0.16);
-      return;
-    }
-
-    osc.type = "square";
-    osc.frequency.setValueAtTime(260, now);
-    osc.frequency.exponentialRampToValueAtTime(140, now + 0.2);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.36, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
-    osc.start(now);
-    osc.stop(now + 0.24);
+    audio.pause();
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
   }, []);
 }
 
